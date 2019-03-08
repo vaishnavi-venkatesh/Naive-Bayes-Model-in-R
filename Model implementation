@@ -1,0 +1,222 @@
+#Download the data set Census Income Data for Adults along with its explanation. Explore the data set as you see fit and that allows you to get a sense of the data and get comfortable with it. Is there distributional skew in any of the features? Is there a need to apply a transform?
+
+
+data <- file('http://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data')
+income_data <- read.table(data, fileEncoding="UTF-16", header = FALSE, sep = ',', 
+              col.names = c('age', 'workclass', 'fnlwgt', 'education', 'education-num', 
+              'marital-status', 'occupation', 'relationship', 'race', 'sex', 
+              'capital-gain', 'capital-loss', 'hours-per-week', 
+              'native-country', 'income-level'), stringsAsFactors = FALSE)
+
+#columns with categorical features
+income_features <- income_data[, c(2, 4, 6:10, 14:15)]
+
+#changing income column as a feature factor
+income_features$income.level <- factor(income_features$income.level)
+
+#data cleaning
+#removing all missing values and changing NA to ? from workclass, occupation and native
+income_final <- income_features[!(income_features$workclass == ' ?' | 
+                income_features$occupation == ' ?' | 
+                income_features$native.country == ' ?'), ]
+
+#structure of data
+str(income_final)
+
+#PART3
+#Create a frequency and then a likelihood table for the categorical features in the data set. Build your own Naive Bayes classifier for those features.
+
+#building table and counting each categorical variable and sorting by income level
+frequency_table <- sapply(income_final[-9], table, income_final$income.level)
+
+#increasing count of everything so that features with 0 dont change their probabilities
+laplace_estimator <- sapply(frequency_table, function(x) { 
+  apply(x, 1, function(x) { 
+    x + 1})})
+
+#dividing the count with the total sum of that column
+nb_table <- sapply(laplace_estimator, function(x) { 
+  apply(x, 1, function(x) { 
+    x / sum(x)})})
+
+#naive bayes classifier form
+nb_table <- lapply(nb_table, t)
+head(nb_table)
+
+
+#building a naive bayes classifier
+#this classifier calculates the probabilites of a person's income being less than greater than 50k
+
+nb <- function(x) {
+  
+#initializing all the variables
+  t1 <- 0
+  t2 <- 0
+  li.greater50 <- 0
+  li.lesser50 <- 0
+  pr.lesser50 <- 0
+  z1 <- list()
+  z2 <- list()
+  y <- list()
+  
+  
+  for (j in 1:nrow(x)) {
+    y[[j]] <- colnames(x[j, ] %>%  select_if(~ !any(is.na(.))))
+  }
+  
+#getting column names for each row and likelihood values for income less than or equal to 50
+  for (n in 1:nrow(x)) {
+    for (k in 1:length(y[[n]])) {
+      t1[k] <- nb_table[[y[[n]][k]]][1, x[n, y[[n]][k]]]
+    }
+    z1[[n]] <- t1
+  }
+ 
+
+#getting column names for each row and likelihood values for income greater than 50   
+  for (n in 1:nrow(x)) {
+    for (k in 1:length(y[[n]])) {
+      t2[k] <- nb_table[[y[[n]][k]]][2, x[n, y[[n]][k]]]
+    }
+    z2[[n]] <- t2
+  }
+  
+ 
+  for (m in 1:length(z1)) {
+    li.lesser50[m] <- prod(z1[[m]])
+  }
+  
+
+  for (l in 1:length(z2)) {
+    li.greater50[l] <- prod(z2[[l]])
+  }
+  
+ 
+  for (q in 1:nrow(x)) {
+   pr.lesser50[q] <- li.lesser50[q]/(li.greater50[q] + li.lesser50[q]) 
+  }
+  return(pr.lesser50)
+}
+
+#PART4
+#Predict the binomial class membership for a white male adult who is a federal government worker with a bachelors degree who immigrated from Ireland. Ignore any other features in your model.
+
+#writing the test case
+test_case <- income_final[0,-9]
+test_case[1, ] <- c(' Federal-gov', ' Bachelors', NA, NA, NA, ' White', ' Male', ' Ireland')
+
+# prediciting the binomial class membership for the given case
+nb(test_case)
+
+#PART5
+#Perform 10-fold cross validation on your algorithm to tune it and report the final accuracy results
+
+income_final1 <- income_final
+income_final1$income.level <- if_else(income_final$income.level == ' >50K', 0, 1)
+
+# predicting the probability of people earning <=50k
+nb.predict <- nb(income_final1[-9])
+
+# person with probability >0.5 is determined to be earning >50k
+nb.predict_class <- ifelse(nb.predict > 0.50, 1, 0)
+
+# checking the accuracy of algorithm
+confusionMatrix(nb.predict_class, income_final1$income.level)
+
+
+#cross validation for the predictions
+#naive bayes classifier function for cross calidation
+
+nb.crossvalidation <- function(x) {
+  
+#initializing all variables
+  t1 <- 0
+  t2 <- 0
+  li.greater50 <- 0
+  li.lesser50 <- 0
+  pr.lesser50 <- 0
+  z1 <- list()
+  z2 <- list()
+  y <- list()
+  
+ 
+  for (j in 1:nrow(x)) {
+    y[[j]] <- colnames(x[j, ] %>%  select_if(~ !any(is.na(.))))
+  }
+  
+#getting the likelihood values for the case of income <=50k for each row
+  
+  for (n in 1:nrow(x)) {
+    for (k in 1:length(y[[n]])) {
+      t1[k] <- nb_table_crossvalidation[[y[[n]][k]]][1, x[n, y[[n]][k]]]
+    }
+    z1[[n]] <- t1
+  }
+  
+#getting the likelihood values for income >50k, by feeding the column names
+  for (n in 1:nrow(x)) {
+    for (k in 1:length(y[[n]])) {
+      t2[k] <- nb_table_crossvalidation[[y[[n]][k]]][2, x[n, y[[n]][k]]]
+    }
+    z2[[n]] <- t2
+  }
+  
+#calculating the overall likelihood value by multiplying the individual likelihoods when income <=50k
+  for (m in 1:length(z1)) {
+    li.lesser50[m] <- prod(z1[[m]])
+  }
+  
+#calculating the overall likelihood value by multiplying the individual likelihoods when income >50k
+  for (l in 1:length(z2)) {
+    li.greater50[l] <- prod(z2[[l]])
+  }
+  
+#transforming the likelihood into probability
+  for (q in 1:nrow(x)) {
+    pr.lesser50[q] <- li.lesser50[q]/(li.greater50[q] + li.lesser50[q]) 
+  }
+  return(pr.lesser50)
+}
+
+# initialize the accuracy vector
+accuracy <- rep(0,6)
+
+for (i in 1:6) {
+#indicate the interval of the test set
+  indices <- (((i-1) * round((1/10)*nrow(income_final1))) + 1):((i*round((1/10) * nrow(income_final1))))
+  
+#training set
+  training <- income_final[-indices,]
+  
+#test set
+  testing <- income_final1[indices,]
+  
+#building a frequency and a likelihood table from training set
+  frequency_table_crossvalidation <- sapply(training[-9], table, training$income.level)
+  
+  laplace_estimator_crossvalidation <- sapply(frequency_table_crossvalidation, function(x) { 
+    apply(x, 1, function(x) { 
+      x + 1})})
+  
+  nb_table_crossvalidation <- sapply(laplace_estimator_crossvalidation, function(x) { 
+    apply(x, 1, function(x) { 
+      x / sum(x)})})
+  
+  nb_table_crossvalidation <- lapply(laplace_estimator_crossvalidation, t)
+  
+#make predictions on the test set using the crossvalidation function that takes likelihoodvalues from training set
+  nb.crossvalidation_prediction <- nb.crossvalidation(testing[-9])
+  
+  nb.crossvalidation_prediction_class <- ifelse(nb.crossvalidation_prediction > 0.50, 1, 0)
+  
+#confusion matrix
+  confusion_matrix <- table(testing$income.level, nb.crossvalidation_prediction_class)
+  
+#assigning the accuracy of model to the vector
+  accuracy[i] <- sum(diag(confusion_matrix))/sum(confusion_matrix)
+}
+
+accuracy
+
+#mean accuracy 
+mean(accuracy)
